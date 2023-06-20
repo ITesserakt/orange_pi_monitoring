@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package monitor;
+
+import "google/protobuf/empty.proto";
+
+option optimize_for = LITE_RUNTIME;
+
+service Monitor {
+    rpc MonitorCPU (google.protobuf.Empty) returns (CpuResponse);
+    rpc MonitorNetwork (google.protobuf.Empty) returns (NetworkResponse);
+}
+
+message NetworkInterface {
+    string name = 1;
+    uint64 bytes_in = 2;
+    uint64 bytes_out = 3;
+}
+
+message NetworkResponse {
+    repeated NetworkInterface interfaces = 1;
+}
+
+message CpuResponse {
+    repeated float usage = 1;
+    optional float temperature = 2;
+}

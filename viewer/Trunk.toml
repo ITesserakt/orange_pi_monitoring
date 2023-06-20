@@ -1,7 +1,3 @@
 [build]
 target = "index.html"
 dist = "dist"
-
-[serve]
-tls_key_path = "certificates/key.pem"
-tls_cert_path = "certificates/cert.pem"

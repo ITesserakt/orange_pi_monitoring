@@ -101,6 +101,7 @@ impl AveragePlotProps {
                     .range(vec![range.start, range.end]),
             )
             .show_legend(false)
+            .auto_size(true)
     }
 }
 
@@ -110,9 +111,7 @@ pub fn AveragePlot(props: &AveragePlotProps) -> Html {
     plot.set_layout(props.layout());
     plot.add_traces(vec![props.avg_series(), props.main_series()]);
 
-    html! {
-        <Plotly {plot} />
-    }
+    html! { <Plotly {plot}/> }
 }
 
 #[cfg(test)]
@@ -122,6 +121,7 @@ mod tests {
     use std::ops::Range;
 
     #[repr(transparent)]
+    #[derive(PartialEq, Debug)]
     struct RangeF32(Range<f32>);
 
     impl<M: Copy + Default> ApproxEq for RangeF32
@@ -153,7 +153,7 @@ mod tests {
     fn test_avg_plot_range() {
         let props = default_plot();
 
-        assert!(RangeF32(props.y_range()).approx_eq(RangeF32(0.1..10.9), (f32::EPSILON, 0)))
+        assert_eq!(RangeF32(props.y_range()), RangeF32(-8.0..19.0))
     }
 
     #[test]

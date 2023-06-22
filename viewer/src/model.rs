@@ -1,5 +1,3 @@
-use crate::average_plot::AveragePlot;
-use crate::bar::Bar;
 use crate::client::RpcClient;
 use crate::model::Message::*;
 use crate::model::Model::*;
@@ -11,8 +9,7 @@ use smallvec::SmallVec;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Response, Status};
-use ybc::*;
-use yew::{function_component, html, Component, Context, Html, Properties};
+use yew::{Component, Context, Html, Properties};
 
 #[derive(Clone)]
 pub struct Common {
@@ -247,71 +244,6 @@ impl Component for Model {
                 network_response,
                 common.connection_address.clone(),
             ),
-            Populated {
-                active: _,
-                cpu_temp_window,
-                usage,
-                network_response,
-                common,
-            } => html! {
-                <div>
-                    <div class="uk-card-secondary
-                                uk-card-body 
-                                uk-flex 
-                                uk-flex-between 
-                                uk-card-hover 
-                                uk-flex-middle 
-                                uk-padding-small">
-                        <p class="uk-margin-remove-bottom">
-                            {"Connected to "}
-                            <a href={ common.connection_address.as_ref().clone() }>{"device"}</a>
-                            {" at "}{ common.connection_address.as_ref().clone() }
-                        </p>
-                        <button onclick={ctx.link().callback(|_| Connect)}
-                                class="uk-button-danger uk-padding-small">
-                            {"Disconnect"}
-                        </button>
-                    </div>
-                    <div class="uk-card-default uk-card-body uk-padding uk-margin uk-grid-item-match">
-                        <h2 class="uk-card-title">{"CPU properties:"}</h2>
-                        <div class="uk-grid uk-child-width-expand@s uk-grid-divider">
-                            <div class="uk-card uk-card-body">
-                                {"Current temperature: "}
-                            </div>
-                            <div class="uk-card uk-card-body">
-                                <p>{"Usage: "}</p>
-                                {usage.iter().map(|&x|
-                                    html! { <Bar fill={x} class="uk-light uk-margin-small"/> }
-                                ).collect::<Html>()}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="uk-card-default uk-card-body uk-padding uk-margin">
-                        <h2 class="uk-card-title">{"Available networks:"}</h2>
-                        <table class="uk-table uk-table-divider">
-                            <thead>
-                                <tr>
-                                {network_response.interfaces.iter().map(|x| html!{
-                                    <th>{x.name.clone()}</th>
-                                }).collect::<Html>()}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    {network_response.interfaces.iter().map(|x| html!{
-                                        <td>{"Bytes in: "}{x.bytes_in}</td>
-                                    }).collect::<Html>()}
-                                </tr>
-                                <tr>
-                                    {network_response.interfaces.iter().map(|x| html!{
-                                        <td>{"Bytes out: "}{x.bytes_out}</td>
-                                    }).collect::<Html>()}
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            },
         }
     }
 }

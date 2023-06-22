@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 use std::sync::Arc;
 use tonic::Status;
 use ybc::*;
-use yew::{function_component, html, Context, Html, Properties};
+use yew::{function_component, html, Context, Html};
 
 #[function_component]
 pub(crate) fn ConnectedView() -> Html {
@@ -74,7 +74,7 @@ fn connected_to_view(ctx: &Context<Model>, connected_to: Arc<String>) -> Html {
     }
 }
 
-fn cpu_view(ctx: &Context<Model>, temperature: &SmallVec<[f32; 60]>, usage: &Vec<f32>) -> Html {
+fn cpu_view(temperature: &SmallVec<[f32; 60]>, usage: &Vec<f32>) -> Html {
     html! {
         <Tile ctx={TileCtx::Parent} classes="is-flex is-flex-direction-column">
             <Title>{"Cpu properties"}</Title>
@@ -90,6 +90,8 @@ fn cpu_view(ctx: &Context<Model>, temperature: &SmallVec<[f32; 60]>, usage: &Vec
                                  avg_series_color={(0x47, 0x89, 0x78)}
                     />
                 </Tile>
+            </Tile>
+            <Tile ctx={TileCtx::Parent}>
                 <Tile ctx={TileCtx::Child} classes="box">
                     <Title>{"Usage"}</Title>
                     {usage.iter().map(|&x| html!{ <Bar fill={x} class="my-2"/> }).collect::<Html>()}
@@ -105,7 +107,7 @@ fn network_view(network: &NetworkResponse) -> Html {
             <Title>{"Network properties"}</Title>
             <Tile ctx={TileCtx::Parent}>
                 <Tile ctx={TileCtx::Child} classes="box">
-                    <Table fullwidth=true>
+                    <Table fullwidth=true scrollable=true>
                         <thead>
                             <tr>
                             {network.interfaces.iter().map(|x| html!{
@@ -143,7 +145,7 @@ pub(crate) fn populated_view(
         <Tile ctx={TileCtx::Ancestor} classes="is-justify-content-center mt-1">
             <Tile vertical=true size={TileSize::Eight}>
                 { connected_to_view(ctx, connected_to) }
-                { cpu_view(ctx, temperature_window, usage) }
+                { cpu_view(temperature_window, usage) }
                 { network_view(network) }
             </Tile>
         </Tile>

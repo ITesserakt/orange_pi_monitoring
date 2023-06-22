@@ -1,22 +1,18 @@
-use common::monitoring::{CpuResponse, NetworkResponse};
-use prokio::spawn_local;
-use smallvec::SmallVec;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use tonic::{Request, Status};
-use web_sys::HtmlInputElement;
-use yew::{html, Component, Context, Html, InputEvent, Properties, TargetCast};
-use yew_plotly::plotly::color::Rgb;
-use yew_plotly::plotly::common::{DashType, Line, Mode, Title};
-use yew_plotly::plotly::layout::Axis;
-use yew_plotly::plotly::{Layout, Plot, Scatter};
-use yew_plotly::Plotly;
-
+use crate::average_plot::AveragePlot;
 use crate::bar::Bar;
 use crate::client::RpcClient;
 use crate::model::Message::*;
 use crate::model::Model::*;
+use crate::view::{failed_view, populated_view, unloaded_view};
+use common::monitoring::{CpuResponse, NetworkResponse, Pack};
+use futures::stream::AbortHandle;
+use futures::TryStreamExt;
+use smallvec::SmallVec;
+use std::sync::Arc;
+use std::time::Duration;
+use tonic::{Response, Status};
+use ybc::*;
+use yew::{function_component, html, Component, Context, Html, Properties};
 
 #[derive(Clone)]
 pub struct Common {
@@ -25,10 +21,10 @@ pub struct Common {
 
 pub enum Model {
     Unloaded(Common),
-    Connected(Common, Arc<AtomicBool>),
+    Connected(Common, AbortHandle),
     Failed(Common, Status),
     Populated {
-        active: Arc<AtomicBool>,
+        active: AbortHandle,
         cpu_temp_window: SmallVec<[f32; 60]>,
         usage: Vec<f32>,
         network_response: NetworkResponse,
@@ -41,6 +37,21 @@ pub enum Message {
     Populate(CpuResponse, NetworkResponse),
     Connect,
     ChangeDestination(String),
+}
+
+impl From<Result<Response<Pack>, Status>> for Message {
+    fn from(value: Result<Response<Pack>, Status>) -> Self {
+        match value {
+            Ok(x) => {
+                let Pack {
+                    cpu: Some(cpu),
+                    network: Some(network),
+                } = x.into_inner() else { unreachable!() };
+                Populate(cpu, network)
+            }
+            Err(e) => Fail(e),
+        }
+    }
 }
 
 #[derive(Properties, PartialEq)]
@@ -60,6 +71,127 @@ impl Default for Model {
     }
 }
 
+#[allow(clippy::unnecessary_cast)]
+impl Model {
+    #[inline]
+    fn handle_fail_message(
+        &mut self,
+        msg: Message,
+        redraw: bool,
+        _ctx: &Context<Self>,
+    ) -> (Option<Message>, bool) {
+        match (msg, self as &mut Self) {
+            (Fail(e), Connected(common, active) | Populated { active, common, .. }) => {
+                active.abort();
+                *self = Failed(common.clone(), e);
+                (None, true)
+            }
+            (Fail(_), _) => (None, false),
+            (other, _) => (Some(other), redraw),
+        }
+    }
+
+    #[inline]
+    fn handle_populate_message(
+        &mut self,
+        msg: Message,
+        redraw: bool,
+        _ctx: &Context<Self>,
+    ) -> (Option<Message>, bool) {
+        match (msg, self as &mut Self) {
+            (Populate(cpu, network), Connected(common, active)) => {
+                let mut array: SmallVec<_> = Default::default();
+                if let Some(t) = cpu.temperature {
+                    array.push(t)
+                }
+
+                *self = Populated {
+                    active: active.clone(),
+                    cpu_temp_window: array,
+                    usage: cpu.usage,
+                    network_response: network,
+                    common: common.clone(),
+                };
+                (None, true)
+            }
+            (
+                Populate(cpu, network),
+                Populated {
+                    cpu_temp_window,
+                    network_response,
+                    usage,
+                    ..
+                },
+            ) => {
+                if cpu_temp_window.len() == cpu_temp_window.inline_size() {
+                    cpu_temp_window.remove(0);
+                }
+                if let Some(t) = cpu.temperature {
+                    cpu_temp_window.push(t);
+                }
+                *usage = cpu.usage;
+                *network_response = network;
+
+                (None, true)
+            }
+            (Populate(_, _), _) => (None, false),
+            (other, _) => (Some(other), redraw),
+        }
+    }
+
+    #[inline]
+    fn handle_connect_message(
+        &mut self,
+        msg: Message,
+        redraw: bool,
+        ctx: &Context<Self>,
+    ) -> (Option<Message>, bool) {
+        match (msg, self as &mut Self) {
+            (Connect, Unloaded(common)) => {
+                let client = RpcClient::new(common.connection_address.as_ref().clone());
+                let (stream, handle) = client.connect();
+                let upd_interval = ctx.props().update_interval;
+                ctx.link().send_stream(stream.and_then(move |x| async move {
+                    prokio::time::sleep(upd_interval).await;
+                    Ok(x)
+                }));
+                *self = Connected(common.clone(), handle);
+                (None, true)
+            }
+            (Connect, Failed(common, _)) => {
+                *self = Unloaded(common.clone());
+                (None, true)
+            }
+            (Connect, Populated { common, active, .. }) => {
+                active.abort();
+                *self = Unloaded(common.clone());
+                (None, true)
+            }
+            (Connect, _) => (None, false),
+            (other, _) => (Some(other), redraw),
+        }
+    }
+
+    #[inline]
+    fn handle_change_message(
+        &mut self,
+        msg: Message,
+        redraw: bool,
+        _ctx: &Context<Self>,
+    ) -> (Option<Message>, bool) {
+        match (msg, self as &mut Self) {
+            (ChangeDestination(destination), Unloaded(common)) => {
+                *common = Common {
+                    connection_address: Arc::new(destination),
+                };
+                (None, false)
+            }
+            (ChangeDestination(_), _) => (None, false),
+            (other, _) => (Some(other), redraw),
+        }
+    }
+}
+
 impl Component for Model {
     type Message = Message;
     type Properties = Props;
@@ -75,92 +207,46 @@ impl Component for Model {
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
-        #[allow(clippy::unnecessary_cast)]
-        match (msg, self as &mut Self) {
-            (Fail(e), Connected(common, active) | Populated { active, common, .. }) => {
-                active.store(false, Ordering::Release);
-                *self = Failed(common.clone(), e)
-            }
-            (ChangeDestination(dst), Unloaded(_)) => {
-                *self = Unloaded(Common {
-                    connection_address: Arc::new(dst),
-                })
-            }
-            (Populate(t, f), Connected(common, active)) => {
-                let mut array: SmallVec<_> = Default::default();
-                if let Some(t) = t.temperature {
-                    array.push(t);
-                }
-                *self = Populated {
-                    common: common.clone(),
-                    active: active.clone(),
-                    cpu_temp_window: array,
-                    usage: t.usage,
-                    network_response: f,
-                }
-            }
-            (
-                Populate(t, f),
-                Populated {
-                    cpu_temp_window,
-                    usage,
-                    network_response,
-                    ..
-                },
-            ) => {
-                if let Some(t) = t.temperature {
-                    cpu_temp_window.push(t);
-                }
-                if cpu_temp_window.len() == cpu_temp_window.inline_size() {
-                    cpu_temp_window.remove(0);
-                }
-                *usage = t.usage;
-                *network_response = f;
-            }
-            (Connect, Unloaded(dst)) => {
-                *self = Connected(dst.clone(), Model::connect(ctx, &dst.connection_address))
-            }
-            (Connect, Failed(common, _)) => *self = Unloaded(common.clone()),
-            (Connect, Populated { common, .. }) => *self = Unloaded(common.clone()),
-            _ => return false,
-        };
+        let handlers = [
+            Model::handle_populate_message,
+            Model::handle_connect_message,
+            Model::handle_change_message,
+            Model::handle_fail_message,
+        ];
+        let mut msg = Some(msg);
+        let mut redraw = false;
 
-        true
+        for handler in handlers {
+            if let Some(msg_) = msg {
+                let bundle = handler(self, msg_, redraw, ctx);
+                msg = bundle.0;
+                redraw = bundle.1;
+            } else {
+                return redraw;
+            }
+        }
+
+        redraw
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         match self {
-            Connected(..) => html! {
-                <div class="uk-padding uk-card">
-                    <h3>{"Connected, waiting for an update"}</h3>
-                    <div class="uk-spinner"></div>
-                </div>
-            },
-            Unloaded(form) => {
-                let onclick = ctx.link().callback(|_| Connect);
-                let oninput = ctx.link().callback(|e: InputEvent| {
-                    let element: HtmlInputElement = e.target_unchecked_into();
-                    ChangeDestination(element.value())
-                });
-
-                html! {
-                    <div class="uk-card uk-padding">
-                        <h3>{"Enter service URL"}</h3>
-                        <div class="uk-flex">
-                            <input class="uk-input" type="text" {oninput} value={form.connection_address.as_ref().clone()}/>
-                            <button class="uk-button uk-button-primary" {onclick}>{"Connect"}</button>
-                        </div>
-                    </div>
-                }
-            }
-            Failed(_, e) => html! {
-                <div class="uk-card uk-padding">
-                    <h3>{"Failed to connect to service"}</h3>
-                    <p>{"Cannot retrieve state: "}{e}</p>
-                    <button class="uk-button-primary uk-button"
-                            onclick={ctx.link().callback(|_| Connect)}>{"Reconnect"}</button>
-                </div>
-            },
+            Connected(common, _) => unloaded_view(ctx, common.connection_address.clone(), true),
+            Unloaded(form) => unloaded_view(ctx, form.connection_address.clone(), false),
+            Failed(_, e) => failed_view(e, ctx),
+            Populated {
+                cpu_temp_window,
+                usage,
+                network_response,
+                common,
+                ..
+            } => populated_view(
+                ctx,
+                cpu_temp_window,
+                usage,
+                network_response,
+                common.connection_address.clone(),
+            ),
             Populated {
                 active: _,
                 cpu_temp_window,
@@ -191,7 +277,6 @@ impl Component for Model {
                         <div class="uk-grid uk-child-width-expand@s uk-grid-divider">
                             <div class="uk-card uk-card-body">
                                 {"Current temperature: "}
-                                {Model::draw_temp_chart(cpu_temp_window)}
                             </div>
                             <div class="uk-card uk-card-body">
                                 <p>{"Usage: "}</p>
@@ -228,80 +313,5 @@ impl Component for Model {
                 </div>
             },
         }
-    }
-}
-
-impl Model {
-    fn draw_temp_chart<const N: usize>(temp: &SmallVec<[f32; N]>) -> Html {
-        let mut plot = Plot::new();
-        let temp = temp.to_vec();
-        let min = *temp.iter().min_by_key(|&&x| x as u32).unwrap();
-        let max = *temp.iter().max_by_key(|&&x| x as u32).unwrap();
-        let cumavg = temp
-            .iter()
-            .scan((0.0, 0), |(acc, cnt), x| {
-                *cnt += 1;
-                *acc += *x;
-                Some(*acc / *cnt as f32)
-            })
-            .collect();
-
-        let layout = Layout::new()
-            .x_axis(Axis::new().title(Title::new("Time, sec")))
-            .y_axis(
-                Axis::new()
-                    .title(Title::new("Temperature, °C"))
-                    .range(vec![min - 5.0, max + 5.0]),
-            )
-            .show_legend(false);
-
-        let series = Scatter::new((0..N).into_iter().collect(), temp)
-            .mode(Mode::Lines)
-            .name("Temperature")
-            .line(
-                Line::new()
-                    .dash(DashType::Dot)
-                    .color(Rgb::new(0x37, 0x6C, 0x5F)),
-            );
-
-        let avg_series = Scatter::new((0..N).into_iter().collect(), cumavg)
-            .mode(Mode::Lines)
-            .name("Average temperature")
-            .line(Line::new().color(Rgb::new(0x47, 0x89, 0x78)));
-
-        plot.add_trace(series);
-        plot.add_trace(avg_series);
-        plot.set_layout(layout);
-
-        html! { <Plotly {plot}/> }
-    }
-
-    async fn monitoring_loop(client: &mut RpcClient) -> Message {
-        let cpu = client.monitor_cpu(Request::new(())).await;
-        let network = client.monitor_network(Request::new(())).await;
-
-        match (cpu, network) {
-            (Ok(cpu), Ok(network)) => Populate(cpu.into_inner(), network.into_inner()),
-            (Err(e), _) | (_, Err(e)) => Fail(e),
-        }
-    }
-
-    fn connect(ctx: &Context<Model>, destination: &str) -> Arc<AtomicBool> {
-        let active = Arc::new(AtomicBool::new(true));
-        let mut client = RpcClient::new(destination.to_owned());
-        let upd_interval = ctx.props().update_interval;
-        let scope = ctx.link().clone();
-        let _runtime = prokio::Runtime::builder().build().unwrap();
-        let active_signal = active.clone();
-        let stream = async move {
-            while active_signal.load(Ordering::Acquire) {
-                let message = Model::monitoring_loop(&mut client).await;
-                scope.send_message(message);
-                prokio::time::sleep(upd_interval).await;
-            }
-        };
-
-        spawn_local(stream);
-        active
     }
 }

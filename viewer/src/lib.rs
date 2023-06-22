@@ -1,10 +1,13 @@
 #![forbid(unsafe_code)]
 
+pub mod average_plot;
 pub mod bar;
 pub mod client;
 pub mod model;
+pub mod view;
 
 use std::time::Duration;
+use ybc::*;
 use yew::{function_component, html, Html};
 
 use crate::model::Model;
@@ -13,34 +16,28 @@ use crate::model::Model;
 fn app() -> Html {
     html! {
         <>
-            <main class="wrapper">
-                <nav class="uk-navbar-container uk-margin">
-                    <div class="uk-container">
-                        <div class="uk-navbar uk-navbar-left">
-                            <a uk-icon="icon: menu" class="uk-navbar-item uk-navbar-toggle" href=""></a>
-                            <ul class="uk-navbar-item">
-                                <li class="uk-logo">{"Orange Pi monitoring service"}</li>
-                            </ul>
-                        </div>
-                    </div>
-                </nav>
-                <div class="uk-container">
-                    <Model update_interval={Duration::from_millis(1000)} auto_connect={false}/>
-                </div>
-                <div class="buffer"></div>
-            </main>
-            <footer class="uk-padding uk-position-z-index">
-                <div class="uk-container">
+            <Navbar fixed={NavbarFixed::Top} padded=true classes="has-background-light py-1" navbrand={html!{
+                <NavbarItem>
+                    <Title>{"Orange Pi monitoring service"}</Title>
+                </NavbarItem>
+            }} navstart={html!{}} navend={html!{}}/>
+            <Hero fixed_nav=true size={HeroSize::FullheightWithNavbar} body={html!{
+                <Container fluid={true}>
+                    <Model update_interval={Duration::from_secs(1)}/>
+                </Container>
+            }}/>
+            <Footer>
+                <Container classes="has-text-centered">
                     <a href="https://github.com/ITesserakt">{"Nikitin Vladimir"}</a>
                     {" - Bauman Moscow state technical university"}
-                </div>
-            </footer>
+                </Container>
+            </Footer>
         </>
     }
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
-fn main() {
+fn launch() {
     yew::Renderer::<App>::new().render();
 }

@@ -1,8 +1,2 @@
-[build]
-target = "x86_64-pc-windows-msvc"
-
 [target.armv7-unknown-linux-gnueabihf]
 linker = "compiler\\arm_gcc\\bin\\arm-linux-gnueabihf-gcc.exe"
-
-[target.wasm32-unknown-unknown]
-runner = 'wasm-bindgen-test-runner.exe'

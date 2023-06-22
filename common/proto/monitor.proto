@@ -9,6 +9,7 @@ option optimize_for = LITE_RUNTIME;
 service Monitor {
     rpc MonitorCPU (google.protobuf.Empty) returns (CpuResponse);
     rpc MonitorNetwork (google.protobuf.Empty) returns (NetworkResponse);
+    rpc MonitorAll (google.protobuf.Empty) returns (Pack);
 }
 
 message NetworkInterface {
@@ -24,4 +25,9 @@ message NetworkResponse {
 message CpuResponse {
     repeated float usage = 1;
     optional float temperature = 2;
+}
+
+message Pack {
+    NetworkResponse network = 1;
+    CpuResponse cpu = 2;
 }

@@ -1,11 +1,14 @@
 use std::sync::Arc;
 use sysinfo::System;
 use tokio::sync::Mutex;
+use tokio::try_join;
 use tonic::{async_trait, Request, Response, Status};
 
 use crate::collect_info::{Cpu, MonitoringData, Network};
 
-use common::monitoring::{monitor_server::Monitor, CpuResponse, NetworkInterface, NetworkResponse};
+use common::monitoring::{
+    monitor_server::Monitor, CpuResponse, NetworkInterface, NetworkResponse, Pack,
+};
 
 pub struct MonitorService {
     system: Arc<Mutex<System>>,
@@ -47,6 +50,19 @@ impl Monitor for MonitorService {
             })),
             Err(e) => Err(Status::from_error(Box::new(e))),
         }
+    }
+
+    async fn monitor_all(&self, request: Request<()>) -> Result<Response<Pack>, Status> {
+        try_join!(
+            self.monitor_cpu(Request::new(())),
+            self.monitor_network(request)
+        )
+        .map(|x| {
+            Response::new(Pack {
+                network: Some(x.1.into_inner()),
+                cpu: Some(x.0.into_inner()),
+            })
+        })
     }
 }
 

@@ -4,7 +4,8 @@ use crate::model::Model::*;
 use crate::view::{failed_view, populated_view, unloaded_view};
 use common::monitoring::{CpuResponse, NetworkResponse, Pack};
 use futures::stream::AbortHandle;
-use futures::TryStreamExt;
+use futures::{pin_mut, StreamExt};
+use prokio::{spawn_local, Runtime};
 use smallvec::SmallVec;
 use std::sync::Arc;
 use std::time::Duration;
@@ -145,13 +146,7 @@ impl Model {
     ) -> (Option<Message>, bool) {
         match (msg, self as &mut Self) {
             (Connect, Unloaded(common)) => {
-                let client = RpcClient::new(common.connection_address.as_ref().clone());
-                let (stream, handle) = client.connect();
-                let upd_interval = ctx.props().update_interval;
-                ctx.link().send_stream(stream.and_then(move |x| async move {
-                    prokio::time::sleep(upd_interval).await;
-                    Ok(x)
-                }));
+                let handle = Model::run_monitoring(ctx, common);
                 *self = Connected(common.clone(), handle);
                 (None, true)
             }
@@ -167,6 +162,24 @@ impl Model {
             (Connect, _) => (None, false),
             (other, _) => (Some(other), redraw),
         }
+    }
+
+    fn run_monitoring(ctx: &Context<Model>, common: &mut Common) -> AbortHandle {
+        let client = RpcClient::new(common.connection_address.as_ref().clone());
+        let (stream, handle) = client.connect();
+        let upd_interval = ctx.props().update_interval;
+        let _runtime = Runtime::builder().build().unwrap();
+        let scope = ctx.link().clone();
+
+        spawn_local(async move {
+            pin_mut!(stream);
+            while let Some(next) = stream.next().await {
+                scope.send_message(next);
+                prokio::time::sleep(upd_interval).await;
+            }
+        });
+
+        handle
     }
 
     #[inline]
@@ -224,6 +237,18 @@ impl Component for Model {
         }
 
         redraw
+    }
+
+    fn changed(&mut self, ctx: &Context<Self>, _old_props: &Self::Properties) -> bool {
+        match self {
+            Connected(common, active) | Populated { common, active, .. } => {
+                active.abort();
+                *active = Self::run_monitoring(ctx, common);
+            }
+            _ => {}
+        };
+
+        false
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {

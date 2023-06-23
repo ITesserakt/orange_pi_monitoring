@@ -78,23 +78,25 @@ fn cpu_view(temperature: &SmallVec<[f32; 60]>, usage: &Vec<f32>) -> Html {
     html! {
         <Tile ctx={TileCtx::Parent} classes="is-flex is-flex-direction-column">
             <Title>{"Cpu properties"}</Title>
-            <Tile ctx={TileCtx::Parent}>
-                <Tile ctx={TileCtx::Child} classes="box">
-                    <Title>{"Current temperature"}</Title>
-                    <AveragePlot y_data={temperature.to_vec()}
-                                 x_name={"Time, sec"}
-                                 y_name={"Temperature, °C"}
-                                 main_series_name={"Temperature"}
-                                 main_series_color={(0x37, 0x6c, 0x5f)}
-                                 avg_series_name={"Average temperature"}
-                                 avg_series_color={(0x47, 0x89, 0x78)}
-                    />
+            <Tile>
+                <Tile ctx={TileCtx::Parent}>
+                    <Tile ctx={TileCtx::Child} classes="box">
+                        <Title>{"Current temperature"}</Title>
+                        <AveragePlot y_data={temperature.to_vec()}
+                                     x_name={"Time, sec"}
+                                     y_name={"Temperature, °C"}
+                                     main_series_name={"Temperature"}
+                                     main_series_color={(0x37, 0x6c, 0x5f)}
+                                     avg_series_name={"Average temperature"}
+                                     avg_series_color={(0x47, 0x89, 0x78)}
+                        />
+                    </Tile>
                 </Tile>
-            </Tile>
-            <Tile ctx={TileCtx::Parent}>
-                <Tile ctx={TileCtx::Child} classes="box">
-                    <Title>{"Usage"}</Title>
-                    {usage.iter().map(|&x| html!{ <Bar fill={x} class="my-2"/> }).collect::<Html>()}
+                <Tile ctx={TileCtx::Parent} size={TileSize::Six}>
+                    <Tile ctx={TileCtx::Child} classes="box">
+                        <Title>{"Usage"}</Title>
+                        {usage.iter().map(|&x| html!{ <Bar fill={x} class="my-2"/> }).collect::<Html>()}
+                    </Tile>
                 </Tile>
             </Tile>
         </Tile>
@@ -110,20 +112,23 @@ fn network_view(network: &NetworkResponse) -> Html {
                     <Table fullwidth=true scrollable=true>
                         <thead>
                             <tr>
-                            {network.interfaces.iter().map(|x| html!{
-                                <th>{x.name.clone()}</th>
-                            }).collect::<Html>()}
+                                <th></th>
+                                {network.interfaces.iter().map(|x| html!{
+                                    <th>{x.name.clone()}</th>
+                                }).collect::<Html>()}
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
+                                <th>{"Bytes in"}</th>
                                 {network.interfaces.iter().map(|x| html!{
-                                    <td>{"Bytes in: "}{x.bytes_in}</td>
+                                    <td>{x.bytes_in}</td>
                                 }).collect::<Html>()}
                             </tr>
                             <tr>
+                                <th>{"Bytes out"}</th>
                                 {network.interfaces.iter().map(|x| html!{
-                                    <td>{"Bytes out: "}{x.bytes_out}</td>
+                                    <td>{x.bytes_out}</td>
                                 }).collect::<Html>()}
                             </tr>
                         </tbody>
@@ -143,7 +148,7 @@ pub(crate) fn populated_view(
 ) -> Html {
     html! {
         <Tile ctx={TileCtx::Ancestor} classes="is-justify-content-center mt-1">
-            <Tile vertical=true size={TileSize::Eight}>
+            <Tile vertical=true size={TileSize::Ten}>
                 { connected_to_view(ctx, connected_to) }
                 { cpu_view(temperature_window, usage) }
                 { network_view(network) }

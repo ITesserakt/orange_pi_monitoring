@@ -1,15 +1,21 @@
 use ordered_float::OrderedFloat;
+use serde::Serialize;
+use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::ops::Range;
 use yew::{function_component, html, Html, Properties};
-use yew_plotly::plotly::color::Rgb;
+use yew_plotly::plotly::color::{Rgb, Rgba};
 use yew_plotly::plotly::common::{DashType, Fill, Line, Mode, Title};
 use yew_plotly::plotly::layout::Axis;
-use yew_plotly::plotly::{Layout, Plot, Scatter};
+use yew_plotly::plotly::{Layout, Plot, Scatter, Trace};
 use yew_plotly::Plotly;
 
 #[derive(Properties, PartialEq)]
-pub struct AveragePlotProps {
-    pub y_data: Vec<f32>,
+pub struct AveragePlotProps<T, const N: usize>
+where
+    T: Copy + PartialEq,
+{
+    pub y_data: [Vec<T>; N],
     pub x_name: String,
     pub y_name: String,
     pub main_series_name: String,
@@ -18,20 +24,18 @@ pub struct AveragePlotProps {
     pub avg_series_color: (u8, u8, u8),
 }
 
-impl AveragePlotProps {
+impl AveragePlotProps<f32, 1> {
     fn y_range(&self) -> Range<f32> {
-        let len = self.y_data.len();
+        let len = self.y_data[0].len();
         if len == 0 {
             return 0.0..0.0;
         }
 
-        let max = self
-            .y_data
+        let max = self.y_data[0]
             .iter()
             .max_by_key(|&&x| OrderedFloat(x))
             .unwrap();
-        let min = self
-            .y_data
+        let min = self.y_data[0]
             .iter()
             .min_by_key(|&&x| OrderedFloat(x))
             .unwrap();
@@ -42,42 +46,23 @@ impl AveragePlotProps {
         (min - margin)..(max + margin)
     }
 
-    fn cumulative_average(&self) -> Vec<f32> {
-        self.y_data
+    fn sliding_average<const N: usize>(&self) -> Vec<f32> {
+        self.y_data[0]
             .iter()
-            .scan((0.0, 0), |(acc, cnt), x| {
-                *cnt += 1;
-                *acc += *x;
-                Some(*acc / *cnt as f32)
+            .scan(VecDeque::with_capacity(N), |acc, &next| {
+                if acc.len() == N {
+                    acc.pop_front();
+                }
+                acc.push_back(next);
+                Some(acc.iter().sum::<f32>() / acc.len() as f32)
             })
             .collect()
     }
 
-    fn main_series(&self) -> Box<Scatter<usize, f32>> {
-        Scatter::new(
-            (0..self.y_data.len()).into_iter().collect(),
-            self.y_data.clone(),
-        )
-        .mode(Mode::Lines)
-        .name(&self.main_series_name)
-        .line(Line::new().dash(DashType::Dot).color(Rgb::new(
-            self.main_series_color.0,
-            self.main_series_color.1,
-            self.main_series_color.2,
-        )))
-    }
-
     fn avg_series(&self) -> Box<Scatter<usize, f32>> {
-        let tint_factor = 3. / 4.;
-        let tint = (
-            self.avg_series_color.0 as f64 + (255 - self.avg_series_color.0) as f64 * tint_factor,
-            self.avg_series_color.1 as f64 + (255 - self.avg_series_color.1) as f64 * tint_factor,
-            self.avg_series_color.2 as f64 + (255 - self.avg_series_color.2) as f64 * tint_factor,
-        );
-
         Scatter::new(
-            (0..self.y_data.len()).into_iter().collect(),
-            self.cumulative_average(),
+            (0..self.y_data[0].len()).into_iter().collect(),
+            self.sliding_average::<10>(),
         )
         .mode(Mode::Lines)
         .name(&self.avg_series_name)
@@ -87,29 +72,67 @@ impl AveragePlotProps {
             self.avg_series_color.2,
         )))
         .fill(Fill::ToZeroY)
-        .fill_color(Rgb::new(tint.0 as u8, tint.1 as u8, tint.2 as u8))
+        .fill_color(Rgba::new(
+            self.avg_series_color.0,
+            self.avg_series_color.1,
+            self.avg_series_color.2,
+            0.25,
+        ))
     }
+}
 
-    fn layout(&self) -> Layout {
-        let range = self.y_range();
-
-        Layout::new()
-            .x_axis(Axis::new().title(Title::new(&self.x_name)))
-            .y_axis(
-                Axis::new()
-                    .title(Title::new(&self.y_name))
-                    .range(vec![range.start, range.end]),
-            )
-            .show_legend(false)
-            .auto_size(true)
+impl<T: Copy + PartialEq + Serialize + 'static + Debug, const N: usize> AveragePlotProps<T, N> {
+    fn main_series(&self) -> Vec<Box<dyn Trace>> {
+        self.y_data
+            .iter()
+            .map(|y_data| {
+                Scatter::new((0..y_data.len()).into_iter().collect(), y_data.clone())
+                    .mode(Mode::Lines)
+                    .name(&self.main_series_name)
+                    .line(Line::new().dash(DashType::Dot).color(Rgb::new(
+                        self.main_series_color.0,
+                        self.main_series_color.1,
+                        self.main_series_color.2,
+                    ))) as Box<dyn Trace>
+            })
+            .collect()
     }
 }
 
 #[function_component]
-pub fn AveragePlot(props: &AveragePlotProps) -> Html {
+pub fn AveragePlot<T: Copy + PartialEq + Serialize + 'static + Debug, const N: usize>(
+    props: &AveragePlotProps<T, N>,
+) -> Html {
     let mut plot = Plot::new();
-    plot.set_layout(props.layout());
-    plot.add_traces(vec![props.avg_series(), props.main_series()]);
+    plot.set_layout(
+        Layout::new()
+            .x_axis(Axis::new().title(Title::new(&props.x_name)))
+            .y_axis(Axis::new().title(Title::new(&props.y_name)))
+            .show_legend(false)
+            .auto_size(true),
+    );
+    plot.add_traces(props.main_series());
+
+    html! { <Plotly {plot}/> }
+}
+
+#[function_component]
+pub fn AverageF32Plot(props: &AveragePlotProps<f32, 1>) -> Html {
+    let y_range = props.y_range();
+    let mut plot = Plot::new();
+    plot.set_layout(
+        Layout::new()
+            .x_axis(Axis::new().title(Title::new(&props.x_name)))
+            .y_axis(
+                Axis::new()
+                    .title(Title::new(&props.y_name))
+                    .range(vec![y_range.start, y_range.end]),
+            )
+            .show_legend(false)
+            .auto_size(true),
+    );
+    plot.add_traces(props.main_series());
+    plot.add_trace(props.avg_series());
 
     html! { <Plotly {plot}/> }
 }
@@ -137,9 +160,9 @@ mod tests {
         }
     }
 
-    fn default_plot() -> AveragePlotProps {
+    fn default_plot() -> AveragePlotProps<f32, 1> {
         AveragePlotProps {
-            y_data: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+            y_data: [vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]],
             x_name: "".to_string(),
             y_name: "".to_string(),
             main_series_name: "Test".to_string(),
@@ -161,8 +184,8 @@ mod tests {
         let props = default_plot();
 
         assert_eq!(
-            props.cumulative_average(),
-            vec![1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5]
+            props.sliding_average::<4>(),
+            vec![1.0, 1.5, 2.0, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]
         );
     }
 }

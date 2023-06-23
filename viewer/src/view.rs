@@ -1,8 +1,8 @@
-use crate::average_plot::AveragePlot;
+use crate::average_plot::AverageF32Plot;
 use crate::bar::Bar;
 use crate::model::Message::{ChangeDestination, Connect};
 use crate::model::Model;
-use common::monitoring::NetworkResponse;
+use common::monitoring::{MemoryResponse, NetworkResponse};
 use smallvec::SmallVec;
 use std::sync::Arc;
 use tonic::Status;
@@ -43,9 +43,9 @@ pub(crate) fn failed_view(status: &Status, ctx: &Context<Model>) -> Html {
     html! {
         <Tile ctx={TileCtx::Ancestor}>
             <Tile ctx={TileCtx::Parent} classes="is-justify-content-center">
-                <Tile ctx={TileCtx::Child} classes="box has-background-warning"
+                <Tile ctx={TileCtx::Child} classes="box has-background-danger has-text-light"
                         size={TileSize::Eight}>
-                    <Title>{"Failed to connect to service"}</Title>
+                    <Title classes="has-text-light">{"Failed to connect to service"}</Title>
                     <p class="mb-2">{status}</p>
                     <Button classes="is-primary" onclick={ctx.link().callback(|_| Connect)}>
                         {"Reconnect"}
@@ -81,8 +81,8 @@ fn cpu_view(temperature: &SmallVec<[f32; 60]>, usage: &Vec<f32>) -> Html {
             <Tile>
                 <Tile ctx={TileCtx::Parent}>
                     <Tile ctx={TileCtx::Child} classes="box">
-                        <Title>{"Current temperature"}</Title>
-                        <AveragePlot y_data={temperature.to_vec()}
+                        <Subtitle>{"Current temperature"}</Subtitle>
+                        <AverageF32Plot y_data={[temperature.to_vec()]}
                                      x_name={"Time, sec"}
                                      y_name={"Temperature, °C"}
                                      main_series_name={"Temperature"}
@@ -94,8 +94,62 @@ fn cpu_view(temperature: &SmallVec<[f32; 60]>, usage: &Vec<f32>) -> Html {
                 </Tile>
                 <Tile ctx={TileCtx::Parent} size={TileSize::Six}>
                     <Tile ctx={TileCtx::Child} classes="box">
-                        <Title>{"Usage"}</Title>
+                        <Subtitle>{"Usage"}</Subtitle>
                         {usage.iter().map(|&x| html!{ <Bar fill={x} class="my-2"/> }).collect::<Html>()}
+                    </Tile>
+                </Tile>
+            </Tile>
+        </Tile>
+    }
+}
+
+fn memory_view(memory: &SmallVec<[MemoryResponse; 60]>) -> Html {
+    let as_megabytes = |f: fn(&MemoryResponse) -> u64| {
+        move |memory: &MemoryResponse| f(memory) as f64 / 1024.0 / 1024.0
+    };
+    let free = memory
+        .iter()
+        .map(as_megabytes(|x| x.free))
+        .map(|x| x as f32)
+        .collect::<Vec<_>>();
+    html! {
+        <Tile ctx={TileCtx::Parent} classes="is-flex is-flex-direction-column">
+            <Title>{"Memory properties"}</Title>
+            <Tile>
+                <Tile ctx={TileCtx::Parent} size={TileSize::Four} vertical=true>
+                    <Tile ctx={TileCtx::Child} classes="box">
+                        <p>
+                            <Subtitle>{"Total memory"}</Subtitle>
+                            {format!("{:.2}", memory.last().map(as_megabytes(|x| x.total)).unwrap_or(0.0))}
+                            {"MB"}
+                        </p>
+                    </Tile>
+                    <Tile ctx={TileCtx::Child} classes="box">
+                        <p>
+                            <Subtitle>{"Used memory"}</Subtitle>
+                            {format!("{:.2}", memory.last().map(as_megabytes(|x| x.used)).unwrap_or(0.0))}
+                            {"MB"}
+                        </p>
+                    </Tile>
+                    <Tile ctx={TileCtx::Child} classes="box">
+                        <p>
+                            <Subtitle>{"Available memory"}</Subtitle>
+                            {format!("{:.2}", memory.last().map(as_megabytes(|x| x.available)).unwrap_or(0.0))}
+                            {"MB"}
+                        </p>
+                    </Tile>
+                </Tile>
+                <Tile ctx={TileCtx::Parent}>
+                    <Tile ctx={TileCtx::Child} classes="box">
+                        <Subtitle>{"Free memory"}</Subtitle>
+                        <AverageF32Plot y_data={[free]}
+                                     x_name={"Time, sec"}
+                                     y_name={"Free memory, MB"}
+                                     main_series_name={"Free memory"}
+                                     main_series_color={(0x82, 0x35, 0x4F)}
+                                     avg_series_name={"Average free memory"}
+                                     avg_series_color={(0x65, 0x29, 0x3D)}
+                        />
                     </Tile>
                 </Tile>
             </Tile>
@@ -144,6 +198,7 @@ pub(crate) fn populated_view(
     temperature_window: &SmallVec<[f32; 60]>,
     usage: &Vec<f32>,
     network: &NetworkResponse,
+    memory: &SmallVec<[MemoryResponse; 60]>,
     connected_to: Arc<String>,
 ) -> Html {
     html! {
@@ -151,6 +206,7 @@ pub(crate) fn populated_view(
             <Tile vertical=true size={TileSize::Ten}>
                 { connected_to_view(ctx, connected_to) }
                 { cpu_view(temperature_window, usage) }
+                { memory_view(memory) }
                 { network_view(network) }
             </Tile>
         </Tile>

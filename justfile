@@ -28,7 +28,7 @@ test:
     cargo test --target wasm32-unknown-unknown -p viewer
 
 sync: build-arm
-    -ssh server@{{ orangepi_host }} 'kill -2 (cat .service.lock)'
+    -ssh server@{{ orangepi_host }} "kill -2 `(cat .service.lock | xargs)`"
     scp target/armv7-unknown-linux-gnueabihf/release/monitoring_service server@{{ orangepi_host }}:{{ exe }}
     ssh server@{{ orangepi_host }} 'chmod u+x {{ exe }}'
 

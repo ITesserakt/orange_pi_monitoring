@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use sysinfo::{ComponentExt, CpuExt, CpuRefreshKind, NetworkData, NetworkExt, System, SystemExt};
+use sysinfo::{ComponentExt, CpuExt, NetworkData, NetworkExt, System, SystemExt};
 use tonic::async_trait;
 
 #[async_trait]
@@ -32,14 +32,37 @@ pub struct Network {
 }
 
 #[derive(Debug)]
+pub struct Swap {
+    pub free: u64,
+    pub total: u64,
+    pub used: u64,
+}
+
+#[derive(Debug)]
+pub struct Memory {
+    pub free: u64,
+    pub total: u64,
+    pub available: u64,
+    pub used: u64,
+    pub swap: Swap,
+}
+
+#[derive(Debug)]
 pub struct MonitoringData<T> {
     data: T,
 }
 
 #[async_trait]
+impl AsyncNew for Memory {
+    async fn new(system: &mut System) -> std::io::Result<Self> {
+        Memory::new(system)
+    }
+}
+
+#[async_trait]
 impl AsyncNew for Cpu {
     async fn new(system: &mut System) -> std::io::Result<Self> {
-        Cpu::new(system)
+        Cpu::new(system).await
     }
 }
 
@@ -78,9 +101,12 @@ impl Cpu {
         Ok(temps.into_iter().sum::<f32>() / temps_len as f32)
     }
 
-    fn new(system: &mut System) -> std::io::Result<Self> {
-        system.refresh_all();
-        system.refresh_cpu_specifics(CpuRefreshKind::new().with_cpu_usage());
+    async fn new(system: &mut System) -> std::io::Result<Self> {
+        system.refresh_cpu();
+        tokio::time::sleep(System::MINIMUM_CPU_UPDATE_INTERVAL).await;
+        system.refresh_cpu();
+        system.refresh_components();
+        system.refresh_components_list();
 
         Ok(Self {
             time: Instant::now(),
@@ -113,12 +139,31 @@ impl Network {
     }
 
     fn new(system: &mut System) -> std::io::Result<Self> {
-        system.refresh_all();
+        system.refresh_networks();
+        system.refresh_networks_list();
 
         Ok(Self {
             names: system.networks().into_iter().map(|x| x.0.clone()).collect(),
             bytes_in: Network::read_in(system)?,
             bytes_out: Network::read_out(system)?,
+        })
+    }
+}
+
+impl Memory {
+    fn new(system: &mut System) -> std::io::Result<Self> {
+        system.refresh_memory();
+
+        Ok(Self {
+            free: system.free_memory(),
+            total: system.total_memory(),
+            available: system.available_memory(),
+            used: system.used_memory(),
+            swap: Swap {
+                free: system.free_swap(),
+                total: system.total_swap(),
+                used: system.used_swap(),
+            },
         })
     }
 }

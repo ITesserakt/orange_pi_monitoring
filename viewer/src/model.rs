@@ -2,7 +2,7 @@ use crate::client::RpcClient;
 use crate::model::Message::*;
 use crate::model::Model::*;
 use crate::view::{failed_view, populated_view, unloaded_view};
-use common::monitoring::{CpuResponse, NetworkResponse, Pack};
+use common::monitoring::{CpuResponse, MemoryResponse, NetworkResponse, Pack};
 use futures::stream::AbortHandle;
 use futures::{pin_mut, StreamExt};
 use prokio::{spawn_local, Runtime};
@@ -24,6 +24,7 @@ pub enum Model {
     Populated {
         active: AbortHandle,
         cpu_temp_window: SmallVec<[f32; 60]>,
+        mem_window: SmallVec<[MemoryResponse; 60]>,
         usage: Vec<f32>,
         network_response: NetworkResponse,
         common: Common,
@@ -32,7 +33,7 @@ pub enum Model {
 
 pub enum Message {
     Fail(Status),
-    Populate(CpuResponse, NetworkResponse),
+    Populate(CpuResponse, NetworkResponse, MemoryResponse),
     Connect,
     ChangeDestination(String),
 }
@@ -42,10 +43,11 @@ impl From<Result<Response<Pack>, Status>> for Message {
         match value {
             Ok(x) => {
                 let Pack {
-                    cpu: Some(cpu),
-                    network: Some(network),
-                } = x.into_inner() else { unreachable!() };
-                Populate(cpu, network)
+                    cpu,
+                    network,
+                    memory,
+                } = x.into_inner();
+                Populate(cpu, network, memory)
             }
             Err(e) => Fail(e),
         }
@@ -97,15 +99,18 @@ impl Model {
         _ctx: &Context<Self>,
     ) -> (Option<Message>, bool) {
         match (msg, self as &mut Self) {
-            (Populate(cpu, network), Connected(common, active)) => {
+            (Populate(cpu, network, memory), Connected(common, active)) => {
                 let mut array: SmallVec<_> = Default::default();
                 if let Some(t) = cpu.temperature {
                     array.push(t)
                 }
+                let mut mem_array: SmallVec<_> = Default::default();
+                mem_array.push(memory);
 
                 *self = Populated {
                     active: active.clone(),
                     cpu_temp_window: array,
+                    mem_window: mem_array,
                     usage: cpu.usage,
                     network_response: network,
                     common: common.clone(),
@@ -113,10 +118,11 @@ impl Model {
                 (None, true)
             }
             (
-                Populate(cpu, network),
+                Populate(cpu, network, memory),
                 Populated {
                     cpu_temp_window,
                     network_response,
+                    mem_window,
                     usage,
                     ..
                 },
@@ -127,12 +133,16 @@ impl Model {
                 if let Some(t) = cpu.temperature {
                     cpu_temp_window.push(t);
                 }
+                if mem_window.len() == mem_window.inline_size() {
+                    mem_window.remove(0);
+                }
+                mem_window.push(memory);
                 *usage = cpu.usage;
                 *network_response = network;
 
                 (None, true)
             }
-            (Populate(_, _), _) => (None, false),
+            (Populate(..), _) => (None, false),
             (other, _) => (Some(other), redraw),
         }
     }
@@ -260,6 +270,7 @@ impl Component for Model {
                 cpu_temp_window,
                 usage,
                 network_response,
+                mem_window,
                 common,
                 ..
             } => populated_view(
@@ -267,6 +278,7 @@ impl Component for Model {
                 cpu_temp_window,
                 usage,
                 network_response,
+                mem_window,
                 common.connection_address.clone(),
             ),
         }

@@ -1,4 +1,4 @@
-syntax = "proto3";
+syntax = "proto2";
 
 package monitor;
 
@@ -9,13 +9,14 @@ option optimize_for = LITE_RUNTIME;
 service Monitor {
     rpc MonitorCPU (google.protobuf.Empty) returns (CpuResponse);
     rpc MonitorNetwork (google.protobuf.Empty) returns (NetworkResponse);
+    rpc MonitorMemory (google.protobuf.Empty) returns (MemoryResponse);
     rpc MonitorAll (google.protobuf.Empty) returns (Pack);
 }
 
 message NetworkInterface {
-    string name = 1;
-    uint64 bytes_in = 2;
-    uint64 bytes_out = 3;
+    required string name = 1;
+    required uint64 bytes_in = 2;
+    required uint64 bytes_out = 3;
 }
 
 message NetworkResponse {
@@ -27,7 +28,22 @@ message CpuResponse {
     optional float temperature = 2;
 }
 
+message Swap {
+    required uint64 free = 1;
+    required uint64 total = 2;
+    required uint64 used = 3;
+}
+
+message MemoryResponse {
+    required uint64 free = 1;
+    required uint64 total = 2;
+    required uint64 used = 3;
+    required uint64 available = 4;
+    required Swap swap = 5;
+}
+
 message Pack {
-    NetworkResponse network = 1;
-    CpuResponse cpu = 2;
+    required NetworkResponse network = 1;
+    required CpuResponse cpu = 2;
+    required MemoryResponse memory = 3;
 }

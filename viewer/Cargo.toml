@@ -10,11 +10,9 @@ crate-type = ["cdylib", "rlib"]
 common = { path = "../common" }
 futures = { version = "0.3.28", default-features = false, features = ["std", "async-await"] }
 prokio = "0.1.0"
-smallvec = { version = "1.10.0", features = ["const_generics"] }
 ybc = "0.4.0"
 yew = { version = "0.20.0", features = ["csr"] }
 yew-plotly = "0.2.0"
-web-sys = "0.3.63"
 ordered-float = "3.7.0"
 serde = "1.0.164"
 gloo = "0.8.0"

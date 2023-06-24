@@ -1,24 +1,13 @@
-body, html {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-}
-
-.wrapper {
-    min-height: 100%;
-    margin-bottom: -50px;
-}
-
-* html .wrapper {
-    height: 100%;
-}
-
-.buffer {
-    height: 50px;
-}
-
-footer {
-    background: #f8f8f8;
-    position: sticky;
+.is-relative > .is-corner-right {
+    position: absolute;
     bottom: 0;
+    right: 0;
+}
+
+.tile:hover > .is-swap {
+    visibility: visible;
+}
+
+.tile > .is-swap {
+    visibility: hidden;
 }

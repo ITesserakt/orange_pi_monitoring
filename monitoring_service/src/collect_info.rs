@@ -1,3 +1,4 @@
+use std::io::{Error, ErrorKind};
 use std::{collections::HashMap, time::Instant};
 
 use sysinfo::{ComponentExt, CpuExt, NetworkData, NetworkExt, System, SystemExt};
@@ -98,7 +99,14 @@ impl Cpu {
             .collect::<Vec<_>>();
 
         let temps_len = temps.len();
-        Ok(temps.into_iter().sum::<f32>() / temps_len as f32)
+        if temps_len == 0 {
+            Err(Error::new(
+                ErrorKind::Unsupported,
+                "Temperature is not supported on this system",
+            ))
+        } else {
+            Ok(temps.into_iter().sum::<f32>() / temps_len as f32)
+        }
     }
 
     async fn new(system: &mut System) -> std::io::Result<Self> {

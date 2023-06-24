@@ -2,6 +2,7 @@
 
 pub mod average_plot;
 pub mod bar;
+pub mod bytesize;
 pub mod client;
 pub mod model;
 pub mod view;
@@ -48,7 +49,7 @@ fn app() -> Html {
                 </NavbarDropdown>
             }}/>
             <Hero fixed_nav=true size={HeroSize::FullheightWithNavbar} body={html!{
-                <Container fluid={true}>
+                <Container fluid=true>
                     <Model update_interval={*update_interval}/>
                 </Container>
             }}/>

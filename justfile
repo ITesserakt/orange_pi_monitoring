@@ -39,4 +39,4 @@ remote-server port='50525' update_interval='1000': sync
     ssh server@{{ orangepi_host }} 'cd /home/server/ && ./{{ exe }} -a 0.0.0.0 -p {{ port }} -u {{ update_interval }}'
 
 view address='127.0.0.1' port='8080': build-view
-    cd viewer; trunk serve --address {{ address }} --port {{ port }} {{ release }} --no-autoreload
+    cd viewer; trunk serve --address {{ address }} --port {{ port }} {{ release }}

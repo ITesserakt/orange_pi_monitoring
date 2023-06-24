@@ -1,3 +1,4 @@
+use crate::bytesize::ByteSizeExt;
 use crate::client::RpcClient;
 use crate::model::Message::*;
 use crate::model::Model::*;
@@ -6,7 +7,7 @@ use common::monitoring::{CpuResponse, MemoryResponse, NetworkResponse, Pack};
 use futures::stream::AbortHandle;
 use futures::{pin_mut, StreamExt};
 use prokio::{spawn_local, Runtime};
-use smallvec::SmallVec;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Response, Status};
@@ -23,9 +24,10 @@ pub enum Model {
     Failed(Common, Status),
     Populated {
         active: AbortHandle,
-        cpu_temp_window: SmallVec<[f32; 60]>,
-        mem_window: SmallVec<[MemoryResponse; 60]>,
+        cpu_temp_window: Option<VecDeque<f32>>,
+        free_mem_window: VecDeque<f32>,
         usage: Vec<f32>,
+        memory_response: MemoryResponse,
         network_response: NetworkResponse,
         common: Common,
     },
@@ -54,11 +56,13 @@ impl From<Result<Response<Pack>, Status>> for Message {
     }
 }
 
-#[derive(Properties, PartialEq)]
+#[derive(Properties, PartialEq, Clone)]
 pub struct Props {
     pub update_interval: Duration,
     #[prop_or_default]
     pub auto_connect: bool,
+    #[prop_or(60)]
+    pub window_size: usize,
 }
 
 impl Default for Model {
@@ -96,24 +100,22 @@ impl Model {
         &mut self,
         msg: Message,
         redraw: bool,
-        _ctx: &Context<Self>,
+        ctx: &Context<Self>,
     ) -> (Option<Message>, bool) {
         match (msg, self as &mut Self) {
             (Populate(cpu, network, memory), Connected(common, active)) => {
-                let mut array: SmallVec<_> = Default::default();
-                if let Some(t) = cpu.temperature {
-                    array.push(t)
-                }
-                let mut mem_array: SmallVec<_> = Default::default();
-                mem_array.push(memory);
+                let mut mem_array: VecDeque<f32> = Default::default();
+                mem_array.push_back(memory.free.to_bytes().as_megabytes());
+                let cpu_array = cpu.temperature.map(|x| VecDeque::from([x]));
 
                 *self = Populated {
                     active: active.clone(),
-                    cpu_temp_window: array,
-                    mem_window: mem_array,
+                    cpu_temp_window: cpu_array,
+                    free_mem_window: mem_array,
                     usage: cpu.usage,
                     network_response: network,
                     common: common.clone(),
+                    memory_response: memory,
                 };
                 (None, true)
             }
@@ -122,23 +124,28 @@ impl Model {
                 Populated {
                     cpu_temp_window,
                     network_response,
-                    mem_window,
+                    free_mem_window,
+                    memory_response,
                     usage,
                     ..
                 },
             ) => {
-                if cpu_temp_window.len() == cpu_temp_window.inline_size() {
-                    cpu_temp_window.remove(0);
+                cpu_temp_window
+                    .as_mut()
+                    .zip(cpu.temperature)
+                    .map(|(window, temp)| {
+                        if window.len() == ctx.props().window_size {
+                            window.pop_front();
+                        }
+                        window.push_back(temp);
+                    });
+                if free_mem_window.len() == ctx.props().window_size {
+                    free_mem_window.pop_front();
                 }
-                if let Some(t) = cpu.temperature {
-                    cpu_temp_window.push(t);
-                }
-                if mem_window.len() == mem_window.inline_size() {
-                    mem_window.remove(0);
-                }
-                mem_window.push(memory);
+                free_mem_window.push_back(memory.free.to_bytes().as_megabytes());
                 *usage = cpu.usage;
                 *network_response = network;
+                *memory_response = memory;
 
                 (None, true)
             }
@@ -270,7 +277,8 @@ impl Component for Model {
                 cpu_temp_window,
                 usage,
                 network_response,
-                mem_window,
+                free_mem_window,
+                memory_response,
                 common,
                 ..
             } => populated_view(
@@ -278,7 +286,8 @@ impl Component for Model {
                 cpu_temp_window,
                 usage,
                 network_response,
-                mem_window,
+                free_mem_window,
+                memory_response,
                 common.connection_address.clone(),
             ),
         }

@@ -1,13 +1,14 @@
 use crate::average_plot::AverageF32Plot;
 use crate::bar::Bar;
+use crate::bytesize::{ByteSize, ByteSizeExt};
 use crate::model::Message::{ChangeDestination, Connect};
 use crate::model::Model;
 use common::monitoring::{MemoryResponse, NetworkResponse};
-use smallvec::SmallVec;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tonic::Status;
 use ybc::*;
-use yew::{function_component, html, Context, Html};
+use yew::{function_component, html, AttrValue, Context, Html, Properties};
 
 #[function_component]
 pub(crate) fn ConnectedView() -> Html {
@@ -74,7 +75,7 @@ fn connected_to_view(ctx: &Context<Model>, connected_to: Arc<String>) -> Html {
     }
 }
 
-fn cpu_view(temperature: &SmallVec<[f32; 60]>, usage: &Vec<f32>) -> Html {
+fn cpu_view(temperature: &Option<VecDeque<f32>>, usage: &Vec<f32>) -> Html {
     html! {
         <Tile ctx={TileCtx::Parent} classes="is-flex is-flex-direction-column">
             <Title>{"Cpu properties"}</Title>
@@ -82,14 +83,18 @@ fn cpu_view(temperature: &SmallVec<[f32; 60]>, usage: &Vec<f32>) -> Html {
                 <Tile ctx={TileCtx::Parent}>
                     <Tile ctx={TileCtx::Child} classes="box">
                         <Subtitle>{"Current temperature"}</Subtitle>
-                        <AverageF32Plot y_data={[temperature.to_vec()]}
+                        {match temperature {
+                            Some(temperature) => html!{
+                                <AverageF32Plot y_data={[temperature.iter().cloned().collect::<Vec<_>>()]}
                                      x_name={"Time, sec"}
                                      y_name={"Temperature, °C"}
                                      main_series_name={"Temperature"}
                                      main_series_color={(0x37, 0x6c, 0x5f)}
                                      avg_series_name={"Average temperature"}
                                      avg_series_color={(0x47, 0x89, 0x78)}
-                        />
+                                />},
+                            None => html!{ <p>{"Unavailable on current device"}</p> }
+                        }}
                     </Tile>
                 </Tile>
                 <Tile ctx={TileCtx::Parent} size={TileSize::Six}>
@@ -103,46 +108,46 @@ fn cpu_view(temperature: &SmallVec<[f32; 60]>, usage: &Vec<f32>) -> Html {
     }
 }
 
-fn memory_view(memory: &SmallVec<[MemoryResponse; 60]>) -> Html {
-    let as_megabytes = |f: fn(&MemoryResponse) -> u64| {
-        move |memory: &MemoryResponse| f(memory) as f64 / 1024.0 / 1024.0
-    };
-    let free = memory
-        .iter()
-        .map(as_megabytes(|x| x.free))
-        .map(|x| x as f32)
-        .collect::<Vec<_>>();
+#[derive(Properties, PartialEq, Clone)]
+struct ParameterToPlotProps {
+    name: AttrValue,
+    bytes: ByteSize,
+}
+
+#[function_component]
+fn ParameterToPlot(props: &ParameterToPlotProps) -> Html {
+    html! {
+        <Tile ctx={TileCtx::Child} classes="box is-relative">
+            <Subtitle>{&props.name}</Subtitle>
+            { props.bytes.to_string() }
+            <Button classes="is-primary m-3 is-corner-right is-swap">
+                <Icon classes="mdi mdi-swap-horizontal is-size-5"/>
+            </Button>
+        </Tile>
+    }
+}
+
+fn memory_view(free_memory: &VecDeque<f32>, memory: &MemoryResponse) -> Html {
     html! {
         <Tile ctx={TileCtx::Parent} classes="is-flex is-flex-direction-column">
             <Title>{"Memory properties"}</Title>
             <Tile>
-                <Tile ctx={TileCtx::Parent} size={TileSize::Four} vertical=true>
-                    <Tile ctx={TileCtx::Child} classes="box">
-                        <p>
-                            <Subtitle>{"Total memory"}</Subtitle>
-                            {format!("{:.2}", memory.last().map(as_megabytes(|x| x.total)).unwrap_or(0.0))}
-                            {"MB"}
-                        </p>
+                <Tile size={TileSize::Four}>
+                    <Tile ctx={TileCtx::Parent} vertical=true>
+                        <ParameterToPlot name={"Total memory"} bytes={memory.total.to_bytes()}/>
+                        <ParameterToPlot name={"Used memory"} bytes={memory.used.to_bytes()}/>
+                        <ParameterToPlot name={"Available memory"} bytes={memory.available.to_bytes()}/>
                     </Tile>
-                    <Tile ctx={TileCtx::Child} classes="box">
-                        <p>
-                            <Subtitle>{"Used memory"}</Subtitle>
-                            {format!("{:.2}", memory.last().map(as_megabytes(|x| x.used)).unwrap_or(0.0))}
-                            {"MB"}
-                        </p>
-                    </Tile>
-                    <Tile ctx={TileCtx::Child} classes="box">
-                        <p>
-                            <Subtitle>{"Available memory"}</Subtitle>
-                            {format!("{:.2}", memory.last().map(as_megabytes(|x| x.available)).unwrap_or(0.0))}
-                            {"MB"}
-                        </p>
+                    <Tile ctx={TileCtx::Parent} vertical=true>
+                        <ParameterToPlot name={"Total swap memory"} bytes={memory.swap.total.to_bytes()}/>
+                        <ParameterToPlot name={"Used swap memory"} bytes={memory.swap.used.to_bytes()}/>
+                        <ParameterToPlot name={"Free swap memory"} bytes={memory.swap.free.to_bytes()}/>
                     </Tile>
                 </Tile>
                 <Tile ctx={TileCtx::Parent}>
                     <Tile ctx={TileCtx::Child} classes="box">
                         <Subtitle>{"Free memory"}</Subtitle>
-                        <AverageF32Plot y_data={[free]}
+                        <AverageF32Plot y_data={[free_memory.iter().cloned().collect::<Vec<_>>()]}
                                      x_name={"Time, sec"}
                                      y_name={"Free memory, MB"}
                                      main_series_name={"Free memory"}
@@ -195,10 +200,11 @@ fn network_view(network: &NetworkResponse) -> Html {
 
 pub(crate) fn populated_view(
     ctx: &Context<Model>,
-    temperature_window: &SmallVec<[f32; 60]>,
+    temperature_window: &Option<VecDeque<f32>>,
     usage: &Vec<f32>,
     network: &NetworkResponse,
-    memory: &SmallVec<[MemoryResponse; 60]>,
+    free_memory: &VecDeque<f32>,
+    memory: &MemoryResponse,
     connected_to: Arc<String>,
 ) -> Html {
     html! {
@@ -206,7 +212,7 @@ pub(crate) fn populated_view(
             <Tile vertical=true size={TileSize::Ten}>
                 { connected_to_view(ctx, connected_to) }
                 { cpu_view(temperature_window, usage) }
-                { memory_view(memory) }
+                { memory_view(free_memory, memory) }
                 { network_view(network) }
             </Tile>
         </Tile>

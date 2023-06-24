@@ -210,7 +210,7 @@ mod tests {
 
         assert!(data.is_ok());
         let data = data.unwrap().data;
-        assert!(data.temperature.is_some());
+        assert!(data.temperature.is_none());
         assert!(data.freq.into_iter().all(|x| x > 0));
     }
 

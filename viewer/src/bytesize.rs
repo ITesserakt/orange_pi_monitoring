@@ -61,7 +61,7 @@ impl ByteSize {
                 e => e,
             };
 
-            (size / unit.pow(exp as u32) as f32)
+            size / unit.pow(exp as u32) as f32
         }
     }
 

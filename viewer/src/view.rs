@@ -97,7 +97,7 @@ fn cpu_view(temperature: &Option<VecDeque<f32>>, usage: &Vec<f32>) -> Html {
                         }}
                     </Tile>
                 </Tile>
-                <Tile ctx={TileCtx::Parent} size={TileSize::Six}>
+                <Tile ctx={TileCtx::Parent}>
                     <Tile ctx={TileCtx::Child} classes="box">
                         <Subtitle>{"Usage"}</Subtitle>
                         {usage.iter().map(|&x| html!{ <Bar fill={x} class="my-2"/> }).collect::<Html>()}

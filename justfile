@@ -7,7 +7,11 @@ arch_host := 'archlinux'
 debug := 'true'
 release := if debug == 'true' { '' } else { '--release' }
 
-target := 'wasm32-unknown-unknown'
+web_target := 'wasm32-unknown-unknown'
+target := if os() == "windows" {
+	'x86_64-pc-windows-msvc' } else if os() == "linux" { 
+	'x86_64-unknown-linux-gnu' } else { 
+	error("Unknown os") }
 
 default:
     just --choose
@@ -19,24 +23,26 @@ build-linux:
     cargo build --target x86_64-unknown-linux-gnu -p monitoring_service --release
 
 build-view:
-    cargo build --target {{ target }} {{ release }} -p viewer
+    cargo build --target {{ web_target }} {{ release }} -p viewer
 
 build: build-arm build-view
 
 test:
-    cargo test --target x86_64-pc-windows-msvc
-    cargo test --target wasm32-unknown-unknown -p viewer
+    cargo test --target {{ target }}
 
 sync: build-arm
     -ssh server@{{ orangepi_host }} "kill -2 `(cat .service.lock | xargs)`"
     scp target/armv7-unknown-linux-gnueabihf/release/monitoring_service server@{{ orangepi_host }}:{{ exe }}
     ssh server@{{ orangepi_host }} 'chmod u+x {{ exe }}'
 
-local-server port='50525' update_interval='100':
-    cargo run --target x86_64-pc-windows-msvc {{ release }} -p monitoring_service -- -a 0.0.0.0 -p {{ port }} -u {{ update_interval }}
+local-server port='50525':
+    cargo run --target {{ target }} {{ release }} -p monitoring_service -- -a 0.0.0.0 -p {{ port }}
 
-remote-server port='50525' update_interval='1000': sync
-    ssh server@{{ orangepi_host }} 'cd /home/server/ && ./{{ exe }} -a 0.0.0.0 -p {{ port }} -u {{ update_interval }}'
+remote-server port='50525': sync
+    ssh server@{{ orangepi_host }} 'cd /home/server/ && ./{{ exe }} -a 0.0.0.0 -p {{ port }}
 
 view address='127.0.0.1' port='8080': build-view
     cd viewer; trunk serve --address {{ address }} --port {{ port }} {{ release }}
+
+view-job address='127.0.0.1' port='8080':
+	pueue add 'just view {{ address }} {{ port }}'

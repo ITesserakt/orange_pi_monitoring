@@ -16,3 +16,7 @@
     height: 100%;
     background: #376C5F;
 }
+
+.bar label {
+    z-index: 5;
+}

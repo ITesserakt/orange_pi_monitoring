@@ -1,3 +1,8 @@
+#![deny(clippy::correctness)]
+#![deny(clippy::suspicious)]
+#![warn(clippy::complexity)]
+#![warn(clippy::style)]
+#![deny(clippy::unwrap_used)]
 #![forbid(unsafe_code)]
 
 pub mod average_plot;

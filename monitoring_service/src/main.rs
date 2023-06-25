@@ -1,3 +1,9 @@
+#![deny(clippy::correctness)]
+#![deny(clippy::suspicious)]
+#![warn(clippy::complexity)]
+#![warn(clippy::style)]
+#![warn(clippy::perf)]
+#![deny(clippy::unwrap_used)]
 #![forbid(unsafe_code)]
 
 mod collect_info;
@@ -66,7 +72,7 @@ async fn launch(system: System, cli: ServerCli) -> Result<(), Box<dyn Error>> {
                 .allow_headers(
                     DEFAULT_ALLOW_HEADERS
                         .iter()
-                        .cloned()
+                        .copied()
                         .map(HeaderName::from_static)
                         .collect::<Vec<_>>(),
                 )
@@ -74,7 +80,7 @@ async fn launch(system: System, cli: ServerCli) -> Result<(), Box<dyn Error>> {
                 .expose_headers(
                     DEFAULT_EXPOSED_HEADERS
                         .iter()
-                        .cloned()
+                        .copied()
                         .map(HeaderName::from_static)
                         .collect::<Vec<_>>(),
                 ),

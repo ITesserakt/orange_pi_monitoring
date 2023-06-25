@@ -25,7 +25,7 @@ pub enum Model {
     Populated {
         active: AbortHandle,
         cpu_temp_window: Option<VecDeque<f32>>,
-        free_mem_window: VecDeque<f32>,
+        free_mem_window: VecDeque<f64>,
         usage: Vec<f32>,
         memory_response: MemoryResponse,
         network_response: NetworkResponse,
@@ -67,11 +67,9 @@ pub struct Props {
 
 impl Default for Model {
     fn default() -> Self {
-        Unloaded {
-            0: Common {
-                connection_address: Arc::new("http://orangepi:50525".to_string()),
-            },
-        }
+        Unloaded(Common {
+            connection_address: Arc::new("http://orangepi:50525".to_string()),
+        })
     }
 }
 
@@ -104,7 +102,7 @@ impl Model {
     ) -> (Option<Message>, bool) {
         match (msg, self as &mut Self) {
             (Populate(cpu, network, memory), Connected(common, active)) => {
-                let mut mem_array: VecDeque<f32> = Default::default();
+                let mut mem_array: VecDeque<f64> = Default::default();
                 mem_array.push_back(memory.free.to_bytes().as_megabytes());
                 let cpu_array = cpu.temperature.map(|x| VecDeque::from([x]));
 
@@ -130,15 +128,12 @@ impl Model {
                     ..
                 },
             ) => {
-                cpu_temp_window
-                    .as_mut()
-                    .zip(cpu.temperature)
-                    .map(|(window, temp)| {
-                        if window.len() == ctx.props().window_size {
-                            window.pop_front();
-                        }
-                        window.push_back(temp);
-                    });
+                if let Some((window, temp)) = cpu_temp_window.as_mut().zip(cpu.temperature) {
+                    if window.len() == ctx.props().window_size {
+                        window.pop_front();
+                    }
+                    window.push_back(temp);
+                }
                 if free_mem_window.len() == ctx.props().window_size {
                     free_mem_window.pop_front();
                 }
@@ -182,9 +177,10 @@ impl Model {
     }
 
     fn run_monitoring(ctx: &Context<Model>, common: &mut Common) -> AbortHandle {
-        let client = RpcClient::new(common.connection_address.as_ref().clone());
+        let client = RpcClient::new(common.connection_address.as_ref());
         let (stream, handle) = client.connect();
         let upd_interval = ctx.props().update_interval;
+        #[allow(clippy::unwrap_used)]
         let _runtime = Runtime::builder().build().unwrap();
         let scope = ctx.link().clone();
 

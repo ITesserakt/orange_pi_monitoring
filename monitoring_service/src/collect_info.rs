@@ -56,7 +56,7 @@ pub struct MonitoringData<T> {
 #[async_trait]
 impl AsyncNew for Memory {
     async fn new(system: &mut System) -> std::io::Result<Self> {
-        Memory::new(system)
+        Ok(Memory::new(system))
     }
 }
 
@@ -70,7 +70,7 @@ impl AsyncNew for Cpu {
 #[async_trait]
 impl AsyncNew for Network {
     async fn new(system: &mut System) -> std::io::Result<Self> {
-        Network::new(system)
+        Ok(Network::new(system))
     }
 }
 
@@ -82,13 +82,13 @@ impl<T: AsyncNew + Send, V: AsyncNew + Send> AsyncNew for (T, V) {
 }
 
 impl Cpu {
-    fn read_freq(system: &System) -> std::io::Result<Vec<u64>> {
-        Ok(system.cpus().iter().map(|c| c.frequency()).collect())
+    fn read_freq(system: &System) -> Vec<u64> {
+        system.cpus().iter().map(|c| c.frequency()).collect()
     }
 
-    fn read_loads(system: &System) -> std::io::Result<Vec<f32>> {
+    fn read_loads(system: &System) -> Vec<f32> {
         let cpus = system.cpus();
-        Ok(cpus.iter().map(|c| c.cpu_usage()).collect())
+        cpus.iter().map(|c| c.cpu_usage()).collect()
     }
 
     fn read_temp(system: &System) -> std::io::Result<f32> {
@@ -118,9 +118,9 @@ impl Cpu {
 
         Ok(Self {
             time: Instant::now(),
-            freq: Cpu::read_freq(system).unwrap_or_default(),
+            freq: Cpu::read_freq(system),
             temperature: Cpu::read_temp(system).ok(),
-            usage: Cpu::read_loads(system).unwrap_or_default(),
+            usage: Cpu::read_loads(system),
         })
     }
 }
@@ -129,40 +129,40 @@ impl Network {
     fn read_networks_stats<F: Fn(&NetworkData) -> T, T>(
         system: &System,
         f: F,
-    ) -> std::io::Result<HashMap<String, T>> {
+    ) -> HashMap<String, T> {
         let networks = system.networks();
 
-        Ok(networks
+        networks
             .into_iter()
             .map(|x| (x.0.clone(), f(x.1)))
-            .collect())
+            .collect()
     }
 
-    fn read_in(system: &System) -> std::io::Result<HashMap<String, u64>> {
+    fn read_in(system: &System) -> HashMap<String, u64> {
         Network::read_networks_stats(system, |x| x.received())
     }
 
-    fn read_out(system: &System) -> std::io::Result<HashMap<String, u64>> {
+    fn read_out(system: &System) -> HashMap<String, u64> {
         Network::read_networks_stats(system, |x| x.transmitted())
     }
 
-    fn new(system: &mut System) -> std::io::Result<Self> {
+    fn new(system: &mut System) -> Self {
         system.refresh_networks();
         system.refresh_networks_list();
 
-        Ok(Self {
+        Self {
             names: system.networks().into_iter().map(|x| x.0.clone()).collect(),
-            bytes_in: Network::read_in(system)?,
-            bytes_out: Network::read_out(system)?,
-        })
+            bytes_in: Network::read_in(system),
+            bytes_out: Network::read_out(system),
+        }
     }
 }
 
 impl Memory {
-    fn new(system: &mut System) -> std::io::Result<Self> {
+    fn new(system: &mut System) -> Self {
         system.refresh_memory();
 
-        Ok(Self {
+        Self {
             free: system.free_memory(),
             total: system.total_memory(),
             available: system.available_memory(),
@@ -172,7 +172,7 @@ impl Memory {
                 total: system.total_swap(),
                 used: system.used_swap(),
             },
-        })
+        }
     }
 }
 

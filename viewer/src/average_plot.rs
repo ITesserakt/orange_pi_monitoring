@@ -34,11 +34,13 @@ impl AveragePlotProps<f32, 1> {
         let max = self.y_data[0]
             .iter()
             .max_by_key(|&&x| OrderedFloat(x))
-            .unwrap();
+            .copied()
+            .unwrap_or_default();
         let min = self.y_data[0]
             .iter()
             .min_by_key(|&&x| OrderedFloat(x))
-            .unwrap();
+            .copied()
+            .unwrap_or_default();
 
         let difference = max - min;
         let margin = difference / len as f32 * 10.0;
@@ -61,7 +63,7 @@ impl AveragePlotProps<f32, 1> {
 
     fn avg_series(&self) -> Box<Scatter<usize, f32>> {
         Scatter::new(
-            (0..self.y_data[0].len()).into_iter().collect(),
+            (0..self.y_data[0].len()).collect(),
             self.sliding_average::<10>(),
         )
         .mode(Mode::Lines)
@@ -86,7 +88,7 @@ impl<T: Copy + PartialEq + Serialize + 'static + Debug, const N: usize> AverageP
         self.y_data
             .iter()
             .map(|y_data| {
-                Scatter::new((0..y_data.len()).into_iter().collect(), y_data.clone())
+                Scatter::new((0..y_data.len()).collect(), y_data.clone())
                     .mode(Mode::Lines)
                     .name(&self.main_series_name)
                     .line(Line::new().dash(DashType::Dot).color(Rgb::new(

@@ -1,6 +1,6 @@
 use common::monitoring::monitor_client::MonitorClient;
 use common::monitoring::Pack;
-use futures::future::{AbortHandle};
+use futures::future::AbortHandle;
 use futures::Stream;
 use std::ops::{Deref, DerefMut};
 use tonic::{Request, Response, Status};
@@ -16,20 +16,22 @@ pub struct RpcClient {
 
 impl RpcClient {
     #[cfg(target_arch = "wasm32")]
-    pub fn new(dst: String) -> Self {
-        let client = tonic_web_wasm_client::Client::new(dst);
+    pub fn new<S: ToString>(dst: S) -> Self {
+        let client = tonic_web_wasm_client::Client::new(dst.to_string());
         Self {
             channel: MonitorClient::new(client),
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn new(dst: String) -> Self {
+    pub fn new<S: AsRef<str>>(dst: S) -> Self {
         use std::str::FromStr;
         use tonic::transport::Channel;
         use tonic::transport::Uri;
 
-        let channel = Channel::builder(Uri::from_str(&dst).unwrap()).connect_lazy();
+        let channel =
+            Channel::builder(Uri::from_str(dst.as_ref()).expect("Cannot build uri from string"))
+                .connect_lazy();
         Self {
             channel: MonitorClient::new(channel),
         }

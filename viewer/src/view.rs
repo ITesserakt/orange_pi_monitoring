@@ -75,7 +75,7 @@ fn connected_to_view(ctx: &Context<Model>, connected_to: Arc<String>) -> Html {
     }
 }
 
-fn cpu_view(temperature: &Option<VecDeque<f32>>, usage: &Vec<f32>) -> Html {
+fn cpu_view(temperature: &Option<VecDeque<f32>>, usage: &[f32]) -> Html {
     html! {
         <Tile ctx={TileCtx::Parent} classes="is-flex is-flex-direction-column">
             <Title>{"Cpu properties"}</Title>
@@ -127,7 +127,7 @@ fn ParameterToPlot(props: &ParameterToPlotProps) -> Html {
     }
 }
 
-fn memory_view(free_memory: &VecDeque<f32>, memory: &MemoryResponse) -> Html {
+fn memory_view(free_memory: &VecDeque<f64>, memory: &MemoryResponse) -> Html {
     html! {
         <Tile ctx={TileCtx::Parent} classes="is-flex is-flex-direction-column">
             <Title>{"Memory properties"}</Title>
@@ -147,7 +147,7 @@ fn memory_view(free_memory: &VecDeque<f32>, memory: &MemoryResponse) -> Html {
                 <Tile ctx={TileCtx::Parent}>
                     <Tile ctx={TileCtx::Child} classes="box">
                         <Subtitle>{"Free memory"}</Subtitle>
-                        <AverageF32Plot y_data={[free_memory.iter().cloned().collect::<Vec<_>>()]}
+                        <AverageF32Plot y_data={[free_memory.iter().map(|&x| x as f32).collect::<Vec<_>>()]}
                                      x_name={"Time, sec"}
                                      y_name={"Free memory, MB"}
                                      main_series_name={"Free memory"}
@@ -201,9 +201,9 @@ fn network_view(network: &NetworkResponse) -> Html {
 pub(crate) fn populated_view(
     ctx: &Context<Model>,
     temperature_window: &Option<VecDeque<f32>>,
-    usage: &Vec<f32>,
+    usage: &[f32],
     network: &NetworkResponse,
-    free_memory: &VecDeque<f32>,
+    free_memory: &VecDeque<f64>,
     memory: &MemoryResponse,
     connected_to: Arc<String>,
 ) -> Html {

@@ -1,31 +1,10 @@
-/// byte size for 1 byte
-const B: u64 = 1;
-/// bytes size for 1 kilobyte
-const KB: u64 = 1_000;
-/// bytes size for 1 megabyte
-const MB: u64 = 1_000_000;
-/// bytes size for 1 gigabyte
-const GB: u64 = 1_000_000_000;
-/// bytes size for 1 terabyte
-const TB: u64 = 1_000_000_000_000;
-/// bytes size for 1 petabyte
-const PB: u64 = 1_000_000_000_000_000;
-
 /// bytes size for 1 kibibyte
 const KIB: u64 = 1_024;
 /// bytes size for 1 mebibyte
 const MIB: u64 = 1_048_576;
-/// bytes size for 1 gibibyte
-const GIB: u64 = 1_073_741_824;
-/// bytes size for 1 tebibyte
-const TIB: u64 = 1_099_511_627_776;
-/// bytes size for 1 pebibyte
-const PIB: u64 = 1_125_899_906_842_624;
 
-static UNITS: &str = "KMGTPE";
-static UNITS_SI: &str = "kMGTPE";
-static LN_KB: f64 = 6.931471806; // ln 1024
-static LN_KIB: f64 = 6.907755279; // ln 1000
+const UNITS_SI: &str = "kMGTPE";
+static LN_KIB: f64 = 6.907_755_279; // ln 1000
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
@@ -41,32 +20,34 @@ impl ByteSizeExt for u64 {
     }
 }
 
-impl From<ByteSize> for f32 {
+impl From<ByteSize> for f64 {
     fn from(value: ByteSize) -> Self {
-        value.as_f32()
+        value.as_f64()
     }
 }
 
 impl ByteSize {
-    pub fn as_f32(&self) -> f32 {
+    #[must_use]
+    pub fn as_f64(&self) -> f64 {
         let unit = KIB;
-        let unit_base = LN_KIB as f32;
+        let unit_base = LN_KIB;
 
         if self.0 < unit {
-            self.0 as f32
+            self.0 as f64
         } else {
-            let size = self.0 as f32;
+            let size = self.0 as f64;
             let exp = match (size.ln() / unit_base) as usize {
                 e if e == 0 => 1,
                 e => e,
             };
 
-            size / unit.pow(exp as u32) as f32
+            size / unit.pow(exp as u32) as f64
         }
     }
 
-    pub fn as_megabytes(&self) -> f32 {
-        self.0 as f32 / MB as f32
+    #[must_use]
+    pub fn as_megabytes(&self) -> f64 {
+        self.0 as f64 / MIB as f64
     }
 }
 
@@ -93,5 +74,20 @@ impl ToString for ByteSize {
                 unit_suffix
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::bytesize::ByteSizeExt;
+    use float_cmp::assert_approx_eq;
+
+    #[test]
+    fn test_megabytes_conversion() {
+        let size = 3_221_225_472.to_bytes();
+
+        assert_approx_eq!(f64, size.as_f64(), 3.0);
+        assert_approx_eq!(f64, size.as_megabytes(), 3072.0);
+        assert_eq!(size.to_string(), "3.0 GB".to_string());
     }
 }
